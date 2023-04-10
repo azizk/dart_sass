@@ -1,27 +1,34 @@
 defmodule DartSass do
   @moduledoc """
-  DartSass is a installer and runner for [Sass](https://sass-lang.com/dart-sass).
+  DartSass is an installer and runner for [Dart Sass](https://sass-lang.com/dart-sass).
 
   ## Profiles
 
   You can define multiple configuration profiles. By default, there is a
-  profile called `:default` which you can configure its args, current
-  directory and environment:
+  profile called `:default` where you can configure its `args`,
+  current working directory and environment variables:
 
       config :dart_sass,
-        version: "1.54.5",
+        version: "1.61.0",
         default: [
           args: ~w(css/app.scss ../priv/static/assets/app.css),
           cd: Path.expand("../assets", __DIR__)
         ]
 
-  ## Dart Sass configuration
+  For multiple CSS outputs separate source and destination with a colon:
+
+      [
+        "css/app.scss:../priv/static/assets/app.css",
+        "css/admin.scss:../priv/static/assets/admin.css",
+      ]
+
+  ## DartSass configuration
 
   There are two global configurations for the `dart_sass` application:
 
-    * `:version` - the expected Sass version.
+    * `:version` - the expected `sass` version.
 
-    * `:path` - the path to the Sass executable. By default
+    * `:path` - the path to the `sass` executable. By default
       it is automatically downloaded and placed inside the `_build` directory
       of your current app. Note that if your system architecture requires a
       separate Dart VM executable to run, then `:path` should be defined as a
@@ -38,12 +45,12 @@ defmodule DartSass do
 
   Then the executable will be at:
 
-      NPM_ROOT/sass/sass.js
+      $ ls "$NPM_ROOT/sass/sass.js"
 
-  Where `NPM_ROOT` is the result of `npm root -g`.
+  Where `$NPM_ROOT` is the result of `npm root -g`.
 
   Once you find the location of the executable, you can store it in a
-  `MIX_SASS_PATH` environment variable, which you can then read in
+  `$MIX_SASS_PATH` environment variable, which you can then read in
   your configuration file:
 
       config :dart_sass, path: System.get_env("MIX_SASS_PATH")
@@ -90,7 +97,7 @@ defmodule DartSass do
   def latest_version, do: "1.61.0"
 
   @doc """
-  Returns the configured Sass version.
+  Returns the configured `sass` version.
   """
   def configured_version do
     Application.get_env(:dart_sass, :version, latest_version())
@@ -108,7 +115,7 @@ defmodule DartSass do
 
           config :dart_sass,
             #{profile}: [
-              args: ~w(css/app.scss:../priv/static/assets/app.css),
+              args: ["css/app.scss:../priv/static/assets/app.css"],
               cd: Path.expand("../assets", __DIR__)
             ]
       """
@@ -142,7 +149,7 @@ defmodule DartSass do
   end
 
   @doc """
-  Returns the version of the Sass executable (or snapshot).
+  Returns the version of the `sass` executable (or snapshot).
 
   Returns `{:ok, version_string}` on success or `:error` when the executable
   is not available.
@@ -201,15 +208,15 @@ defmodule DartSass do
   end
 
   @doc """
-  Installs dart-sass with `configured_version/0`.
+  Installs `dart-sass` with `configured_version/0`.
   """
   def install do
     version = configured_version()
     tmp_opts = if System.get_env("MIX_XDG"), do: %{os: :linux}, else: %{}
 
     tmp_dir =
-      freshdir_p(:filename.basedir(:user_cache, "cs-sass", tmp_opts)) ||
-        freshdir_p(Path.join(System.tmp_dir!(), "cs-sass")) ||
+      fresh_mkdir_p(:filename.basedir(:user_cache, "cs-sass", tmp_opts)) ||
+        fresh_mkdir_p(Path.join(System.tmp_dir!(), "cs-sass")) ||
         raise "could not install sass. Set MIX_XDG=1 and then set XDG_CACHE_HOME to the path you want to use as cache"
 
     platform = platform()
@@ -251,7 +258,7 @@ defmodule DartSass do
     paths |> Enum.all?(&File.exists?/1)
   end
 
-  defp freshdir_p(path) do
+  defp fresh_mkdir_p(path) do
     with {:ok, _} <- File.rm_rf(path),
          :ok <- File.mkdir_p(path) do
       path
@@ -287,16 +294,12 @@ defmodule DartSass do
 
   defp target(platform) do
     arch_str = :erlang.system_info(:system_architecture)
-    [arch | _] = arch_str |> List.to_string() |> String.split("-")
 
     # TODO: remove "arm" when we require OTP 24
-    case arch do
-      "amd64" -> "#{platform}-x64"
-      "aarch64" -> "#{platform}-arm64"
-      "arm" -> "#{platform}-arm64"
-      "x86_64" -> "#{platform}-x64"
-      "i686" -> "#{platform}-ia32"
-      "i386" -> "#{platform}-ia32"
+    case arch_str |> List.to_string() |> String.split("-") |> hd() do
+      a when a in ~w[amd64 x86_64] -> "#{platform}-x64"
+      a when a in ~w[i386 i686] -> "#{platform}-ia32"
+      a when a in ~w[arm aarch64] -> "#{platform}-arm64"
       _ -> raise "dart_sass not available for architecture: #{arch_str}"
     end
   end
@@ -308,26 +311,22 @@ defmodule DartSass do
     {:ok, _} = Application.ensure_all_started(:inets)
     {:ok, _} = Application.ensure_all_started(:ssl)
 
-    if proxy = System.get_env("HTTP_PROXY") || System.get_env("http_proxy") do
-      Logger.debug("Using HTTP_PROXY: #{proxy}")
-      %{host: host, port: port} = URI.parse(proxy)
-      :httpc.set_options([{:proxy, {{String.to_charlist(host), port}, []}}])
-    end
+    http_proxy = System.get_env("HTTP_PROXY") || System.get_env("http_proxy")
+    https_proxy = System.get_env("HTTPS_PROXY") || System.get_env("https_proxy")
 
-    if proxy = System.get_env("HTTPS_PROXY") || System.get_env("https_proxy") do
-      Logger.debug("Using HTTPS_PROXY: #{proxy}")
+    if proxy = https_proxy || http_proxy do
+      Logger.debug("Using HTTP#{https_proxy && "S"}_PROXY: #{proxy}")
       %{host: host, port: port} = URI.parse(proxy)
-      :httpc.set_options([{:https_proxy, {{String.to_charlist(host), port}, []}}])
+      option_name = :"#{https_proxy && :https_}proxy"
+      :httpc.set_options([{option_name, {{String.to_charlist(host), port}, []}}])
     end
-
-    # https://erlef.github.io/security-wg/secure_coding_and_deployment_hardening/inets
-    cacertfile = cacertfile() |> String.to_charlist()
 
     http_options = [
       autoredirect: false,
       ssl: [
         verify: :verify_peer,
-        cacertfile: cacertfile,
+        # https://erlef.github.io/security-wg/secure_coding_and_deployment_hardening/inets
+        cacertfile: cacertfile() |> String.to_charlist(),
         depth: 2,
         customize_hostname_check: [
           match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
@@ -336,30 +335,25 @@ defmodule DartSass do
       ]
     ]
 
-    case :httpc.request(:get, {url, []}, http_options, []) do
-      {:ok, {{_, 302, _}, headers, _}} ->
-        {'location', download} = List.keyfind(headers, 'location', 0)
-        options = [body_format: :binary]
-
-        case :httpc.request(:get, {download, []}, http_options, options) do
-          {:ok, {{_, 200, _}, _, body}} ->
-            body
-
-          other ->
-            raise "couldn't fetch #{download}: #{inspect(other)}"
-        end
-
-      other ->
-        raise "couldn't fetch #{url}: #{inspect(other)}"
+    with {_, {:ok, {{_, 302, _}, headers, _}}} <-
+           {:redir, :httpc.request(:get, {url, []}, http_options, [])},
+         {_, {'location', dl_url}, _} <-
+           {:loctn, List.keyfind(headers, 'location', 0), headers},
+         {_, {:ok, {{_, 200, _}, _, body}}, _} <-
+           {:dload, :httpc.request(:get, {dl_url, []}, http_options, body_format: :binary),
+            dl_url} do
+      {:body, body}
+    end
+    |> case do
+      {:redir, error} -> raise "couldn't fetch #{url}: #{inspect(error)}"
+      {:loctn, _, headers} -> raise "couldn't find 'location' header in: #{inspect(headers)}"
+      {:dload, error, dl_url} -> raise "couldn't fetch #{dl_url}: #{inspect(error)}"
+      {:body, body} -> body
     end
   end
 
   defp protocol_versions do
-    if otp_version() < 25 do
-      [:"tlsv1.2"]
-    else
-      [:"tlsv1.2", :"tlsv1.3"]
-    end
+    [:"tlsv1.2"] ++ if(otp_version() >= 25, do: [:"tlsv1.3"], else: [])
   end
 
   defp otp_version do

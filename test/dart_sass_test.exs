@@ -16,13 +16,18 @@ defmodule DartSassTest do
   end
 
   test "updates on install" do
-    Application.put_env(:dart_sass, :version, "1.60.0")
+    older_version =
+      Version.parse!(@version)
+      |> then(fn %{minor: m} = v -> %{v | minor: m - 1} end)
+      |> Version.to_string()
+
+    Application.put_env(:dart_sass, :version, older_version)
 
     Mix.Task.rerun("sass.install", ["--if-missing"])
 
     assert ExUnit.CaptureIO.capture_io(fn ->
              assert DartSass.run(:default, ["--version"]) == 0
-           end) =~ "1.60.0"
+           end) =~ older_version
 
     Application.delete_env(:dart_sass, :version)
 

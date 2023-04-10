@@ -22,6 +22,7 @@ defmodule Mix.Tasks.Sass do
   Note flags to control this Mix task must be given before the profile:
 
       $ mix sass --runtime-config default assets/css/app.scss
+
   """
 
   @shortdoc "Invokes sass with the profile and args"

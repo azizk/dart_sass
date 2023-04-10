@@ -3,8 +3,8 @@ defmodule Mix.Tasks.Sass.Install do
   Installs dart-sass under `_build`.
 
   ```bash
-  $ mix sass.install
-  $ mix sass.install --if-missing
+  mix sass.install
+  mix sass.install --if-missing
   ```
 
   By default, it installs #{DartSass.latest_version()} but you
